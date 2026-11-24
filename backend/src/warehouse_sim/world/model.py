@@ -18,6 +18,7 @@ class NodeKind(StrEnum):
     RAIL = "rail"          # a stop on an aisle rail (horizontal and/or vertical)
     TRANSFER = "transfer"  # a stop on the floor transfer rail across aisle mouths
     DOCK = "dock"          # pickup/drop station
+    PARKING = "parking"    # dead-end spur at the back of each aisle; idle robots wait here
 
 
 class EdgeKind(StrEnum):
@@ -26,6 +27,7 @@ class EdgeKind(StrEnum):
     TRANSFER = "transfer"      # along the transfer rail
     ENTRY = "entry"            # transfer rail <-> aisle mouth
     DOCK = "dock"              # transfer rail <-> dock
+    PARKING = "parking"        # aisle end <-> parking spur
 
 
 class Node(BaseModel):
@@ -45,6 +47,7 @@ class Edge(BaseModel):
     v: str
     length: float  # metres; travel time = length / speed, decided by the sim
     block: str     # the signalling block this edge belongs to
+    oneway: bool = False  # if True, travel only u -> v
 
 
 class Block(BaseModel):
@@ -84,12 +87,14 @@ class World(BaseModel):
 
     @cached_property
     def adjacency(self) -> dict[str, list[tuple[str, Edge]]]:
-        """Undirected adjacency: node id -> [(neighbour id, edge)]."""
+        """Directed adjacency: node id -> [(node you can move to, edge)]. One-way edges appear once."""
         adj: dict[str, list[tuple[str, Edge]]] = {n.id: [] for n in self.nodes}
         for e in self.edges:
             adj[e.u].append((e.v, e))
-            adj[e.v].append((e.u, e))
+            if not e.oneway:
+                adj[e.v].append((e.u, e))
         return adj
 
     def neighbors(self, node_id: str) -> list[tuple[str, Edge]]:
+        """Nodes reachable in one legal move from `node_id` (respects one-way edges)."""
         return self.adjacency[node_id]

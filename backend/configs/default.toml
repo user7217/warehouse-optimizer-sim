@@ -30,4 +30,15 @@ aisles = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]  # one dock in front of each listed aisl
 column_pitch = 1.0
 level_height = 1.0
 slot_depth = 0.8
-aisle_width = 0.5  # lane = robot width; racks either side, back-to-back with the next lane's racks
+aisle_width = 1.0  # robot lane; racks either side, back-to-back with the next lane's racks
+
+[robots]
+count = 8          # must be <= aisles: each robot owns the parking spur of one aisle
+speed = 0.25       # metres per tick
+pick_ticks = 8     # ticks to retrieve a box at its slot
+drop_ticks = 6     # ticks to hand over at a dock
+delay_prob = 0.0   # chance per tick that a moving robot stalls (stress-tests block signalling)
+
+[sim]
+seed = 42
+ticks_per_second = 10

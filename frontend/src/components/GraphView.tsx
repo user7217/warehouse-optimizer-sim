@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react'
-import { DOCK_COLOR, SENSOR_COLOR, STATUS_COLOR, edgeColor, type ColorMode } from '../colors'
+import { DOCK_COLOR, PARKING_COLOR, SENSOR_COLOR, STATUS_COLOR, edgeColor, type ColorMode } from '../colors'
 import { usePanZoom, type Bounds } from '../hooks/usePanZoom'
+import { robotPoint, robotRoute } from '../robotPos'
 import type { Robot, WNode, World } from '../types'
 
 const UNIT = 36 // world units per grid step
@@ -9,14 +10,29 @@ const PANEL_GAP = 1.5 // grid steps between aisle panels
 /**
  * Schematic layout: each aisle is drawn as an elevation (column across, level up),
  * panels stacked top to bottom. The transfer rail and docks sit on the left,
- * at floor level of each aisle. This is the graph the planner sees, flattened.
+ * at floor level of each aisle; parking spurs sit just past the last column.
+ * This is the graph the planner sees, flattened.
  */
-function graphPos(n: WNode, levels: number): [number, number] {
-  const a = n.aisle ?? 0
-  const floorRow = a * (levels + PANEL_GAP) + (levels - 1)
-  if (n.kind === 'rail') return [n.column! * UNIT, (floorRow - n.level!) * UNIT]
-  if (n.kind === 'transfer') return [-1.5 * UNIT, floorRow * UNIT]
-  return [-3 * UNIT, floorRow * UNIT] // dock
+function graphPos(n: WNode, world: World): [number, number] {
+  const { levels, columns } = world.shape
+  const { column_pitch, aisle_spacing } = world.dimensions
+  // Floor row of a (possibly fractional) aisle index; linear, so in-between nodes land in between.
+  const floorRow = (k: number) => k * (levels + PANEL_GAP) + (levels - 1)
+  if (n.kind === 'rail') return [n.column! * UNIT, (floorRow(n.aisle!) - n.level!) * UNIT]
+  if (n.kind === 'parking') return [columns * UNIT, floorRow(n.aisle!) * UNIT]
+  // Transfer lanes and docks: place from their real floor position (x across, z -> aisle rows).
+  return [(n.pos[0] / column_pitch) * UNIT, floorRow(n.pos[2] / aisle_spacing) * UNIT]
+}
+
+/** Small chevron at an edge's midpoint pointing u -> v. */
+function arrowPath(x1: number, y1: number, x2: number, y2: number): string {
+  const mx = (x1 + x2) / 2
+  const my = (y1 + y2) / 2
+  const len = Math.hypot(x2 - x1, y2 - y1) || 1
+  const ux = (x2 - x1) / len
+  const uy = (y2 - y1) / len
+  const s = 6
+  return `M ${mx - ux * s - uy * s} ${my - uy * s + ux * s} L ${mx + ux * s} ${my + uy * s} L ${mx - ux * s + uy * s} ${my - uy * s - ux * s}`
 }
 
 interface Props {
@@ -25,20 +41,20 @@ interface Props {
   colorMode: ColorMode
   selectedRobot: string | null
   onSelectRobot: (id: string) => void
+  /** expected ms between server updates; robot dots glide for this long */
+  updatePeriodMs: number
 }
 
-export function GraphView({ world, robots, colorMode, selectedRobot, onSelectRobot }: Props) {
-  const { levels, aisles, columns } = world.shape
-  const pos = useMemo(() => new Map(world.nodes.map((n) => [n.id, graphPos(n, levels)])), [world, levels])
-  const bounds = useMemo<Bounds>(
-    () => ({
-      minX: -3 * UNIT - UNIT,
-      minY: -UNIT * 1.4,
-      maxX: (columns - 1) * UNIT + UNIT,
-      maxY: ((aisles - 1) * (levels + PANEL_GAP) + levels - 1) * UNIT + UNIT,
-    }),
-    [aisles, columns, levels],
-  )
+export function GraphView({ world, robots, colorMode, selectedRobot, onSelectRobot, updatePeriodMs }: Props) {
+  const { levels, aisles } = world.shape
+  const pos = useMemo(() => new Map(world.nodes.map((n) => [n.id, graphPos(n, world)])), [world])
+  const posOf = (id: string) => pos.get(id)
+  const bounds = useMemo<Bounds>(() => {
+    const xs = [...pos.values()].map((p) => p[0])
+    const ys = [...pos.values()].map((p) => p[1])
+    return { minX: Math.min(...xs) - UNIT, minY: Math.min(-UNIT * 1.4, Math.min(...ys) - UNIT), maxX: Math.max(...xs) + UNIT, maxY: Math.max(...ys) + UNIT }
+  }, [pos])
+  const selected = robots.find((r) => r.id === selectedRobot)
   const svgRef = useRef<SVGSVGElement>(null)
   const { viewBox, fit, zoomCenter } = usePanZoom(svgRef, bounds)
 
@@ -54,16 +70,26 @@ export function GraphView({ world, robots, colorMode, selectedRobot, onSelectRob
         {world.edges.map((e) => {
           const [x1, y1] = pos.get(e.u)!
           const [x2, y2] = pos.get(e.v)!
+          const color = edgeColor(e.kind, e.block, colorMode)
           return (
-            <line key={e.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke={edgeColor(e.kind, e.block, colorMode)} strokeWidth={3} strokeLinecap="round">
-              <title>{`${e.id} · ${e.kind} · block ${e.block} · ${e.length.toFixed(2)} m`}</title>
-            </line>
+            <g key={e.id}>
+              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={3} strokeLinecap="round">
+                <title>{`${e.id} · ${e.kind}${e.oneway ? ' · one-way' : ''} · block ${e.block} · ${e.length.toFixed(2)} m`}</title>
+              </line>
+              {e.oneway && <path d={arrowPath(x1, y1, x2, y2)} className="graph-arrow" stroke={color} />}
+            </g>
           )
         })}
 
         {world.nodes.map((n) => {
           const [x, y] = pos.get(n.id)!
           const label = `${n.id}${n.sensor ? ' · sensor' : ''}`
+          if (n.kind === 'parking')
+            return (
+              <rect key={n.id} x={x - 8} y={y - 8} width={16} height={16} rx={3} fill="none" stroke={PARKING_COLOR} strokeWidth={2}>
+                <title>{label} · parking</title>
+              </rect>
+            )
           if (n.kind === 'dock')
             return (
               <rect key={n.id} x={x - 10} y={y - 10} width={20} height={20} rx={3} fill={DOCK_COLOR}>
@@ -77,15 +103,20 @@ export function GraphView({ world, robots, colorMode, selectedRobot, onSelectRob
           )
         })}
 
+        {selected && <RoutePolyline robot={selected} posOf={posOf} />}
+
         {robots.map((r) => {
-          const p = pos.get(r.node)
+          const p = robotPoint(r, posOf)
           if (!p) return null
-          const selected = r.id === selectedRobot
+          const isSel = r.id === selectedRobot
+          // CSS transition on the transform glides the dot between server updates.
+          const style = { transform: `translate(${p[0]}px, ${p[1]}px)`, transitionDuration: `${updatePeriodMs}ms` }
           return (
-            <g key={r.id} className="graph-robot" onClick={() => onSelectRobot(r.id)}>
-              {selected && <circle cx={p[0]} cy={p[1]} r={14} fill="none" className="graph-selected" strokeWidth={2} />}
-              <circle cx={p[0]} cy={p[1]} r={9} fill={STATUS_COLOR[r.status]} />
-              <title>{`${r.id} · ${r.status}`}</title>
+            <g key={r.id} className="graph-robot" style={style} onClick={() => onSelectRobot(r.id)}>
+              {isSel && <circle r={15} fill="none" className="graph-selected" strokeWidth={2.5} />}
+              <circle r={9} fill={STATUS_COLOR[r.status]} />
+              {r.payload.length > 0 && <rect x={-3.5} y={-3.5} width={7} height={7} className="graph-payload" />}
+              <title>{`${r.id} · ${r.status}${r.payload.length ? ' · carrying' : ''}`}</title>
             </g>
           )
         })}
@@ -99,4 +130,10 @@ export function GraphView({ world, robots, colorMode, selectedRobot, onSelectRob
       <div className="hint">Pinch to zoom · two-finger scroll or drag to pan · double-click to fit</div>
     </div>
   )
+}
+
+function RoutePolyline({ robot, posOf }: { robot: Robot; posOf: (id: string) => readonly number[] | undefined }) {
+  const pts = robotRoute(robot, posOf)
+  if (pts.length < 2) return null
+  return <polyline className="graph-route" points={pts.map((p) => `${p[0]},${p[1]}`).join(' ')} stroke={STATUS_COLOR[robot.status]} />
 }

@@ -10,6 +10,10 @@
   --topbar: #151922;
   --overlay: rgba(21, 25, 34, 0.9);
   --radius: 8px;
+  --ok: #3ecf8e;
+  --warn: #f5a623;
+  --danger: #ff5c7a;
+  --payload: #e0b872;
   font-family: Inter, system-ui, -apple-system, sans-serif;
   font-size: 13px;
   color: var(--text);
@@ -35,11 +39,23 @@ button { font: inherit; }
 .stats { color: var(--muted); font-size: 12px; }
 .spacer { flex: 1; }
 
-.sim-controls { display: flex; gap: 4px; }
+.sim-controls { display: flex; align-items: center; gap: 4px; }
 .sim-controls button {
   background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer;
 }
 .sim-controls button:disabled { opacity: 0.45; cursor: not-allowed; }
+.sim-controls button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.sim-controls select {
+  background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font: inherit; cursor: pointer;
+}
+.sim-controls .chip { margin-right: 4px; }
+.conn { display: flex; align-items: center; gap: 5px; font-size: 12px; margin-right: 6px; }
+.conn .dot { width: 7px; height: 7px; }
+.conn.live { color: var(--muted); }
+.conn.live .dot { background: var(--ok); }
+.conn.down { color: var(--danger); }
+.conn.down .dot { background: var(--danger); }
+.cmd-error { color: var(--danger); font-size: 12px; margin-left: 4px; cursor: help; }
 
 .segmented { display: flex; align-items: center; gap: 0; }
 .segmented .label { margin-right: 6px; font-size: 12px; color: var(--muted); }
@@ -61,7 +77,7 @@ button { font: inherit; }
 .panel { background: var(--panel); padding: 12px; overflow-y: auto; height: 100%; }
 .panel h2 {
   font-size: 12px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
-  display: flex; align-items: center;
+  display: flex; align-items: center; flex-wrap: wrap; row-gap: 6px;
 }
 .count { background: var(--accent-soft); color: var(--accent); border-radius: 10px; padding: 1px 7px; margin-left: 6px; font-size: 11px; }
 .empty { color: var(--muted); line-height: 1.5; background: var(--card); border: 1px dashed var(--border); border-radius: var(--radius); padding: 10px; margin: 0; }
@@ -73,7 +89,38 @@ button { font: inherit; }
 .row { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: var(--radius); cursor: pointer; background: var(--card); border: 1px solid transparent; }
 .row:hover { border-color: var(--border); }
 .row.selected { background: var(--accent-soft); border-color: var(--accent); }
-.row.task { flex-direction: column; align-items: flex-start; gap: 2px; cursor: default; }
+.row.task { flex-direction: column; align-items: stretch; gap: 2px; cursor: default; }
+.row.task.clickable { cursor: pointer; }
+.task-line { display: flex; justify-content: space-between; gap: 8px; }
+.tag { margin-left: auto; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--payload); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; }
+
+.panel h2 .mini {
+  background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+  padding: 2px 8px; margin-left: 4px; font-size: 11px; text-transform: none; letter-spacing: 0; cursor: pointer;
+  white-space: nowrap;
+}
+.panel h2 .mini:hover { border-color: var(--accent); }
+button.link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
+
+/* ---------------------------------------------------------------- metrics */
+.metrics-panel { display: flex; flex-direction: column; }
+.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 0; }
+.metric { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+.metric dt { color: var(--muted); font-size: 11px; }
+.metric dd { margin: 2px 0 0; font-size: 14px; }
+.metric dd.warn { color: var(--warn); }
+.event-log {
+  list-style: none; margin: 0; padding: 4px; flex: 1; min-height: 60px; overflow-y: auto;
+  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+}
+.event { display: grid; grid-template-columns: 3.5em 5.5em 1fr; gap: 6px; padding: 2px 4px; font-size: 12px; border-radius: 4px; }
+.ev-kind { color: var(--muted); }
+.ev-msg { word-break: break-word; }
+.ev-delivered .ev-kind { color: var(--ok); }
+.ev-deadlock { background: rgba(255, 92, 122, 0.12); }
+.ev-deadlock .ev-kind, .ev-deadlock .ev-msg { color: var(--danger); }
+.ev-backoff { background: rgba(245, 166, 35, 0.1); }
+.ev-backoff .ev-kind, .ev-backoff .ev-msg { color: var(--warn); }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 
 .detail { margin-top: 12px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
@@ -88,10 +135,13 @@ button { font: inherit; }
 .graph { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; user-select: none; }
 .graph.panning { cursor: grabbing; }
 .graph line { vector-effect: non-scaling-stroke; }
+.graph-arrow { fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
 .graph-label { fill: var(--muted); font-size: 14px; font-weight: 600; }
 .graph-node { fill: #4d5668; }
 .graph-sensor { fill: var(--bg); }
-.graph-robot { cursor: pointer; }
+.graph-robot { cursor: pointer; transition-property: transform; transition-timing-function: linear; }
+.graph-payload { fill: var(--payload); stroke: var(--bg); stroke-width: 1; }
+.graph-route { fill: none; stroke-width: 3; stroke-dasharray: 6 4; stroke-linejoin: round; vector-effect: non-scaling-stroke; opacity: 0.9; pointer-events: none; }
 .graph-selected { stroke: var(--text); }
 
 .float-bar {

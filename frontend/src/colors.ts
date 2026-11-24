@@ -6,10 +6,14 @@ export const EDGE_KIND_COLOR: Record<EdgeKind, string> = {
   transfer: '#9b7bf0',
   entry: '#9b7bf0',
   dock: '#3ecf8e',
+  parking: '#6b7a99',
 }
 
 export const SENSOR_COLOR = '#ff5c7a'
 export const DOCK_COLOR = '#3ecf8e'
+export const PARKING_COLOR = '#6b7a99'
+/** A carried box on top of a robot. */
+export const PAYLOAD_COLOR = '#e0b872'
 
 export const STATUS_COLOR: Record<RobotStatus, string> = {
   idle: '#8a94a6',

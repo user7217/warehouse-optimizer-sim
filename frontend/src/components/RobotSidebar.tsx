@@ -13,7 +13,7 @@ export function RobotSidebar({ robots, selected, onSelect }: Props) {
     <aside className="panel sidebar">
       <h2>Robots <span className="count">{robots.length}</span></h2>
       {robots.length === 0 ? (
-        <p className="empty">No robots yet. They arrive in the next build step.</p>
+        <p className="empty">No robots. Waiting for the simulator.</p>
       ) : (
         <ul className="list">
           {robots.map((r) => (
@@ -21,28 +21,58 @@ export function RobotSidebar({ robots, selected, onSelect }: Props) {
               <span className="dot" style={{ background: STATUS_COLOR[r.status] }} />
               <span className="mono">{r.id}</span>
               <span className="muted">{r.status}</span>
+              {r.payload.length > 0 && <span className="tag">carrying</span>}
             </li>
           ))}
         </ul>
       )}
 
-      {robot && (
-        <section className="detail">
-          <h3>{robot.id}</h3>
-          <dl>
-            <dt>Status</dt>
-            <dd style={{ color: STATUS_COLOR[robot.status] }}>{robot.status}</dd>
-            <dt>Position</dt>
-            <dd className="mono">{robot.node}</dd>
-            <dt>Task</dt>
-            <dd className="mono">{robot.task ?? '—'}</dd>
-            <dt>Payload</dt>
-            <dd className="mono">{robot.payload.length ? robot.payload.join(', ') : 'empty'}</dd>
-            <dt>Path ahead</dt>
-            <dd className="mono">{robot.path.length ? `${robot.path.length} nodes → ${robot.path.at(-1)}` : '—'}</dd>
-          </dl>
-        </section>
-      )}
+      {robot && <RobotDetail robot={robot} onSelect={onSelect} />}
     </aside>
+  )
+}
+
+function position(r: Robot): string {
+  if (!r.next_node) return r.node
+  return `${r.node} → ${r.next_node} (${Math.round(r.progress * 100)}%)`
+}
+
+function RobotDetail({ robot, onSelect }: { robot: Robot; onSelect: (id: string) => void }) {
+  return (
+    <section className="detail">
+      <h3>{robot.id}</h3>
+      <dl>
+        <dt>Status</dt>
+        <dd style={{ color: STATUS_COLOR[robot.status] }}>{robot.status}</dd>
+        <dt>Goal</dt>
+        <dd className="mono">{robot.goal ? `${robot.goal}${robot.goal_node ? ` · ${robot.goal_node}` : ''}` : '—'}</dd>
+        <dt>Position</dt>
+        <dd className="mono">{position(robot)}</dd>
+        <dt>Task</dt>
+        <dd className="mono">{robot.task ?? '—'}</dd>
+        <dt>Payload</dt>
+        <dd className="mono">{robot.payload.length ? robot.payload.join(', ') : 'empty'}</dd>
+        <dt>Waiting for</dt>
+        <dd className="mono">
+          {robot.waiting_for ? (
+            <button className="link" onClick={() => onSelect(robot.waiting_for!)}>
+              {robot.waiting_for}
+            </button>
+          ) : (
+            '—'
+          )}
+        </dd>
+        <dt>Wait ticks</dt>
+        <dd className="mono">{robot.wait_ticks}</dd>
+        <dt>Distance</dt>
+        <dd className="mono">{robot.distance.toFixed(1)} m</dd>
+        <dt>Delivered</dt>
+        <dd className="mono">{robot.delivered}</dd>
+        <dt>Path ahead</dt>
+        <dd className="mono">{robot.path.length ? `${robot.path.length} nodes → ${robot.path.at(-1)}` : '—'}</dd>
+        <dt>Home</dt>
+        <dd className="mono">{robot.home}</dd>
+      </dl>
+    </section>
   )
 }

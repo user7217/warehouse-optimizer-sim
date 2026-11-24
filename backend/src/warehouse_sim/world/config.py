@@ -31,12 +31,27 @@ class Dimensions(BaseModel):
     aisle_width: float = Field(gt=0)
 
 
+class RobotConfig(BaseModel):
+    count: int = Field(default=8, ge=0)
+    speed: float = Field(default=0.25, gt=0)  # metres per tick
+    pick_ticks: int = Field(default=8, ge=0)
+    drop_ticks: int = Field(default=6, ge=0)
+    delay_prob: float = Field(default=0.0, ge=0, lt=1)
+
+
+class SimConfig(BaseModel):
+    seed: int = 42
+    ticks_per_second: float = Field(default=10, gt=0)
+
+
 class WarehouseConfig(BaseModel):
     name: str
     racks: RackConfig
     rails: RailConfig
     docks: DockConfig
     dimensions: Dimensions
+    robots: RobotConfig = RobotConfig()
+    sim: SimConfig = SimConfig()
 
     @model_validator(mode="after")
     def _check_references(self) -> WarehouseConfig:
@@ -51,6 +66,8 @@ class WarehouseConfig(BaseModel):
             raise ValueError(f"dock aisles out of range 0..{aisles - 1}: {bad_docks}")
         if not self.docks.aisles:
             raise ValueError("need at least one dock")
+        if self.robots.count > aisles:
+            raise ValueError(f"robots.count ({self.robots.count}) > aisles ({aisles}): each robot needs its own parking spur")
         return self
 
 

@@ -12,12 +12,20 @@ def rail_id(aisle: int, column: int, level: int) -> str:
     return f"R{aisle}.{column}.{level}"
 
 
-def transfer_id(aisle: int) -> str:
-    return f"T{aisle}"
+def lane_a_id(k: int) -> str:
+    return f"TA{k}"
+
+
+def lane_b_id(k: int) -> str:
+    return f"TB{k}"
 
 
 def dock_id(aisle: int) -> str:
     return f"D{aisle}"
+
+
+def parking_id(aisle: int) -> str:
+    return f"P{aisle}"
 
 
 class _Geometry:
@@ -28,17 +36,24 @@ class _Geometry:
         self.d = d
         self.aisle_spacing = d.aisle_width + 2 * r.depth * d.slot_depth
 
-    def aisle_z(self, aisle: int) -> float:
+    def aisle_z(self, aisle: float) -> float:
         return aisle * self.aisle_spacing
 
     def rail(self, aisle: int, column: int, level: int) -> Vec3:
         return (column * self.d.column_pitch, level * self.d.level_height, self.aisle_z(aisle))
 
-    def transfer(self, aisle: int) -> Vec3:
-        return (-1.5 * self.d.column_pitch, 0.0, self.aisle_z(aisle))
+    def lane_a(self, k: int) -> Vec3:
+        return (-1.5 * self.d.column_pitch, 0.0, self.aisle_z(k))
+
+    def lane_b(self, k: int) -> Vec3:
+        return (-3.0 * self.d.column_pitch, 0.0, self.aisle_z(k))
 
     def dock(self, aisle: int) -> Vec3:
-        return (-3.0 * self.d.column_pitch, 0.0, self.aisle_z(aisle))
+        """Docks sit outside lane B, between this aisle and the next (they are sidings)."""
+        return (-4.5 * self.d.column_pitch, 0.0, self.aisle_z(aisle + 0.5))
+
+    def parking(self, aisle: int, columns: int) -> Vec3:
+        return (columns * self.d.column_pitch, 0.0, self.aisle_z(aisle))
 
     def slot(self, aisle: int, side: int, column: int, level: int, depth: int) -> Vec3:
         offset = self.d.aisle_width / 2 + self.d.slot_depth * (depth + 0.5)
@@ -50,7 +65,10 @@ def build_world(cfg: WarehouseConfig) -> World:
     geo = _Geometry(cfg)
     lifts = set(cfg.rails.lift_columns)
     nodes: dict[str, Node] = {}
-    raw_edges: list[tuple[EdgeKind, str, str]] = []
+    raw_edges: list[tuple[EdgeKind, str, str, bool]] = []
+
+    def add(kind: EdgeKind, u: str, v: str, oneway: bool = False) -> None:
+        raw_edges.append((kind, u, v, oneway))
 
     # --- aisle rails ---------------------------------------------------------
     for a in range(r.aisles):
@@ -62,19 +80,43 @@ def build_world(cfg: WarehouseConfig) -> World:
                     aisle=a, column=c, level=lv,
                 )
                 if c + 1 < r.columns:
-                    raw_edges.append((EdgeKind.HORIZONTAL, rail_id(a, c, lv), rail_id(a, c + 1, lv)))
+                    add(EdgeKind.HORIZONTAL, rail_id(a, c, lv), rail_id(a, c + 1, lv))
                 if c in lifts and lv + 1 < r.levels:
-                    raw_edges.append((EdgeKind.VERTICAL, rail_id(a, c, lv), rail_id(a, c, lv + 1)))
+                    add(EdgeKind.VERTICAL, rail_id(a, c, lv), rail_id(a, c, lv + 1))
 
-    # --- transfer rail, aisle entries, docks ---------------------------------
+    # --- transfer loop: two one-way lanes, joined at both ends ----------------
+    # Lane A (next to the aisles) flows towards higher aisles; lane B (outside) flows back.
+    # Both lanes run one slot past each end (k = -1 and k = aisles) so the loop can turn.
+    # One-way everywhere here means robots never meet head-on outside the aisles.
+    lane = range(-1, r.aisles + 1)
+    for k in lane:
+        nodes[lane_a_id(k)] = Node(id=lane_a_id(k), kind=NodeKind.TRANSFER, pos=geo.lane_a(k), sensor=True)
+        nodes[lane_b_id(k)] = Node(id=lane_b_id(k), kind=NodeKind.TRANSFER, pos=geo.lane_b(k), sensor=True)
+    for k in lane[:-1]:
+        add(EdgeKind.TRANSFER, lane_a_id(k), lane_a_id(k + 1), oneway=True)
+        add(EdgeKind.TRANSFER, lane_b_id(k + 1), lane_b_id(k), oneway=True)
+    add(EdgeKind.TRANSFER, lane_a_id(r.aisles), lane_b_id(r.aisles), oneway=True)  # far end: A -> B
+    add(EdgeKind.TRANSFER, lane_b_id(-1), lane_a_id(-1), oneway=True)              # near end: B -> A
+
+    # Aisle mouths: enter from A[a], leave onto A[a+1]. In and out never share a rail.
     for a in range(r.aisles):
-        nodes[transfer_id(a)] = Node(id=transfer_id(a), kind=NodeKind.TRANSFER, pos=geo.transfer(a), sensor=True, aisle=a)
-        raw_edges.append((EdgeKind.ENTRY, transfer_id(a), rail_id(a, 0, 0)))
-        if a + 1 < r.aisles:
-            raw_edges.append((EdgeKind.TRANSFER, transfer_id(a), transfer_id(a + 1)))
+        add(EdgeKind.ENTRY, lane_a_id(a), rail_id(a, 0, 0), oneway=True)
+        add(EdgeKind.ENTRY, rail_id(a, 0, 0), lane_a_id(a + 1), oneway=True)
+
+    # Docks are sidings off lane B: in from upstream B[a+1], out to B[a]. A robot dropping off
+    # never blocks the lane, and never has to reverse out of a dead end.
     for a in cfg.docks.aisles:
         nodes[dock_id(a)] = Node(id=dock_id(a), kind=NodeKind.DOCK, pos=geo.dock(a), sensor=True, aisle=a)
-        raw_edges.append((EdgeKind.DOCK, dock_id(a), transfer_id(a)))
+        add(EdgeKind.DOCK, lane_b_id(a + 1), dock_id(a), oneway=True)
+        add(EdgeKind.DOCK, dock_id(a), lane_b_id(a), oneway=True)
+
+    # --- parking: a dead-end spur past the last column of each aisle, floor level.
+    # Dead ends never lie on anyone else's shortest path, so parked robots block nothing.
+    for a in range(r.aisles):
+        nodes[parking_id(a)] = Node(
+            id=parking_id(a), kind=NodeKind.PARKING, pos=geo.parking(a, r.columns), sensor=True, aisle=a, level=0,
+        )
+        add(EdgeKind.PARKING, rail_id(a, r.columns - 1, 0), parking_id(a))
 
     edges, blocks = _assign_blocks(raw_edges, nodes)
 
@@ -100,7 +142,7 @@ def _rail_has_sensor(column: int, columns: int, lifts: set[int], every: int) -> 
 
 
 def _assign_blocks(
-    raw_edges: list[tuple[EdgeKind, str, str]], nodes: dict[str, Node]
+    raw_edges: list[tuple[EdgeKind, str, str, bool]], nodes: dict[str, Node]
 ) -> tuple[list[Edge], list[Block]]:
     """Group edges into blocks: edges joined through a sensor-less node share a block.
 
@@ -116,7 +158,7 @@ def _assign_blocks(
         return i
 
     edges_at_node: dict[str, list[int]] = {}
-    for i, (_, u, v) in enumerate(raw_edges):
+    for i, (_, u, v, _oneway) in enumerate(raw_edges):
         edges_at_node.setdefault(u, []).append(i)
         edges_at_node.setdefault(v, []).append(i)
     for node_id, incident in edges_at_node.items():
@@ -128,10 +170,10 @@ def _assign_blocks(
     block_edges: dict[str, list[str]] = {}
     block_sensors: dict[str, set[str]] = {}
     edges: list[Edge] = []
-    for i, (kind, u, v) in enumerate(raw_edges):
+    for i, (kind, u, v, oneway) in enumerate(raw_edges):
         bid = block_of_root.setdefault(find(i), f"B{len(block_of_root)}")
         eid = f"E{i}"
-        edges.append(Edge(id=eid, kind=kind, u=u, v=v, length=math.dist(nodes[u].pos, nodes[v].pos), block=bid))
+        edges.append(Edge(id=eid, kind=kind, u=u, v=v, length=math.dist(nodes[u].pos, nodes[v].pos), block=bid, oneway=oneway))
         block_edges.setdefault(bid, []).append(eid)
         block_sensors.setdefault(bid, set()).update(n for n in (u, v) if nodes[n].sensor)
 

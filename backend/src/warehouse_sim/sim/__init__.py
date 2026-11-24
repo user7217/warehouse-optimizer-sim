@@ -1,3 +1,3 @@
-from .state import Robot, RobotStatus, SimState, Task, TaskStatus
+from .state import Goal, Metrics, Robot, RobotStatus, SimEvent, SimState, Task, TaskStatus
 
-__all__ = ["Robot", "RobotStatus", "SimState", "Task", "TaskStatus"]
+__all__ = ["Goal", "Metrics", "Robot", "RobotStatus", "SimEvent", "SimState", "Task", "TaskStatus"]

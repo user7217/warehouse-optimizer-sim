@@ -87,3 +87,33 @@ def test_sensor_spacing_changes_block_count():
     coarse = build_world(_cfg(rails={"sensor_every": 0}))
     fine = build_world(_cfg(rails={"sensor_every": 2}))
     assert len(fine.blocks) > len(coarse.blocks)
+
+
+def _reach(world, start, reverse=False):
+    adj = {n.id: [] for n in world.nodes}
+    for u in adj:
+        for v, _ in world.neighbors(u):
+            (adj[v] if reverse else adj[u]).append(u if reverse else v)
+    seen, queue = {start}, deque([start])
+    while queue:
+        for nxt in adj[queue.popleft()]:
+            if nxt not in seen:
+                seen.add(nxt)
+                queue.append(nxt)
+    return seen
+
+
+def test_strongly_connected(world):
+    """With one-way edges, every node must be reachable from and able to reach every other."""
+    start = world.nodes[0].id
+    assert _reach(world, start) == set(world.node_by_id)
+    assert _reach(world, start, reverse=True) == set(world.node_by_id)
+
+
+def test_everything_outside_aisles_is_one_way(world):
+    """Transfer lanes, aisle mouths and dock sidings are one-way: no head-on meetings there."""
+    for e in world.edges:
+        if e.kind in (EdgeKind.TRANSFER, EdgeKind.ENTRY, EdgeKind.DOCK):
+            assert e.oneway, e.id
+        else:
+            assert not e.oneway, e.id

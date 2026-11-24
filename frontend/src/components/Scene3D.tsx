@@ -2,9 +2,10 @@ import { OrbitControls } from '@react-three/drei'
 import { Canvas, useThree } from '@react-three/fiber'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
 import * as THREE from 'three'
-import { DOCK_COLOR, SENSOR_COLOR, edgeColor, type ColorMode } from '../colors'
+import { DOCK_COLOR, PARKING_COLOR, SENSOR_COLOR, edgeColor, type ColorMode } from '../colors'
 import { attachGestures } from '../hooks/gestures'
-import type { Vec3, World } from '../types'
+import type { Robot, Vec3, World } from '../types'
+import { Robots3D } from './Robots3D'
 
 interface Layers {
   racks: boolean
@@ -16,7 +17,12 @@ interface Instance {
   pos: Vec3
   scale: Vec3
   color: string
+  /** optional orientation; defaults to identity */
+  quat?: THREE.Quaternion
 }
+
+const IDENTITY = new THREE.Quaternion()
+const X_AXIS = new THREE.Vector3(1, 0, 0)
 
 /** One draw call for many boxes or spheres. */
 function Instanced({ items, shape = 'box', opacity = 1 }: { items: Instance[]; shape?: 'box' | 'sphere'; opacity?: number }) {
@@ -27,7 +33,7 @@ function Instanced({ items, shape = 'box', opacity = 1 }: { items: Instance[]; s
     const m = new THREE.Matrix4()
     const c = new THREE.Color()
     items.forEach((it, i) => {
-      m.compose(new THREE.Vector3(...it.pos), new THREE.Quaternion(), new THREE.Vector3(...it.scale))
+      m.compose(new THREE.Vector3(...it.pos), it.quat ?? IDENTITY, new THREE.Vector3(...it.scale))
       mesh.setMatrixAt(i, m)
       mesh.setColorAt(i, c.set(it.color))
     })
@@ -44,6 +50,7 @@ function Instanced({ items, shape = 'box', opacity = 1 }: { items: Instance[]; s
 }
 
 const RAIL_T = 0.06 // rail thickness, metres
+const SLOT_FILL = 0.48 // drawn box size as a fraction of its cell, per dimension
 
 function useSceneItems(world: World, colorMode: ColorMode) {
   return useMemo(() => {
@@ -51,16 +58,35 @@ function useSceneItems(world: World, colorMode: ColorMode) {
     const { aisles, columns, levels, depth } = world.shape
     const node = new Map(world.nodes.map((n) => [n.id, n]))
 
-    // Rails: every edge is axis-aligned, so a box stretched along the edge needs no rotation.
+    // Rails: a thin box stretched along each edge and rotated to match (dock sidings and aisle exits are diagonal).
     const rails: Instance[] = world.edges.map((e) => {
-      const a = node.get(e.u)!.pos
-      const b = node.get(e.v)!.pos
+      const a = new THREE.Vector3(...node.get(e.u)!.pos)
+      const b = new THREE.Vector3(...node.get(e.v)!.pos)
+      const dir = b.clone().sub(a)
+      const len = dir.length()
       return {
-        pos: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 0.12, (a[2] + b[2]) / 2],
-        scale: [Math.abs(a[0] - b[0]) + RAIL_T, Math.abs(a[1] - b[1]) + RAIL_T, Math.abs(a[2] - b[2]) + RAIL_T],
+        pos: [(a.x + b.x) / 2, (a.y + b.y) / 2 - 0.12, (a.z + b.z) / 2],
+        scale: [len + RAIL_T, RAIL_T, RAIL_T],
+        quat: new THREE.Quaternion().setFromUnitVectors(X_AXIS, dir.normalize()),
         color: edgeColor(e.kind, e.block, colorMode),
       }
     })
+
+    // One-way edges: a small chevron at the midpoint pointing in the direction of travel.
+    const arrows: Instance[] = world.edges
+      .filter((e) => e.oneway)
+      .map((e) => {
+        const a = new THREE.Vector3(...node.get(e.u)!.pos)
+        const b = new THREE.Vector3(...node.get(e.v)!.pos)
+        const dir = b.clone().sub(a).normalize()
+        const mid = a.clone().lerp(b, 0.5)
+        return {
+          pos: [mid.x, mid.y - 0.12, mid.z],
+          scale: [0.22, 0.03, 0.22],
+          quat: new THREE.Quaternion().setFromUnitVectors(X_AXIS, dir).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 4)),
+          color: edgeColor(e.kind, e.block, colorMode),
+        }
+      })
 
     const sensors: Instance[] = world.nodes
       .filter((n) => n.sensor && n.kind !== 'dock')
@@ -70,10 +96,16 @@ function useSceneItems(world: World, colorMode: ColorMode) {
       .filter((n) => n.kind === 'dock')
       .map((n) => ({ pos: [n.pos[0], -0.45 * lh, n.pos[2]], scale: [1.2, 0.1, Math.min(1.2, aisle_spacing * 0.8)], color: DOCK_COLOR }))
 
+    // Parking spurs: dim slate pads under the rail end, smaller than docks.
+    const parking: Instance[] = world.nodes
+      .filter((n) => n.kind === 'parking')
+      .map((n) => ({ pos: [n.pos[0], n.pos[1] - 0.16, n.pos[2]], scale: [0.8, 0.04, 0.8], color: PARKING_COLOR }))
+
+    // Boxes are background: same cells, but drawn at about half size and muted so robots stand out.
     const slots: Instance[] = world.slots.map((s) => ({
       pos: s.pos,
-      scale: [0.85 * pitch, 0.7 * lh, 0.95 * sd],
-      color: s.depth === 0 ? '#c9a66b' : '#b08f58',
+      scale: [SLOT_FILL * pitch, SLOT_FILL * lh, SLOT_FILL * sd],
+      color: s.depth === 0 ? '#7a6a50' : '#665943',
     }))
 
     // Rack frame: uprights at every column boundary, front and back of each face, plus shelf edge beams.
@@ -96,7 +128,7 @@ function useSceneItems(world: World, colorMode: ColorMode) {
       }
     }
 
-    return { rails, sensors, docks, slots, racks }
+    return { rails, arrows, sensors, docks, parking, slots, racks }
   }, [world, colorMode])
 }
 
@@ -184,8 +216,23 @@ function TrackpadRig({ center, span, request }: { center: Vec3; span: number; re
 
 // ----------------------------------------------------------------- scene ----
 
-export function Scene3D({ world, colorMode, statusText }: { world: World; colorMode: ColorMode; statusText: string }) {
-  const { rails, sensors, docks, slots, racks } = useSceneItems(world, colorMode)
+interface SceneProps {
+  world: World
+  colorMode: ColorMode
+  statusText: string
+  robots: Robot[]
+  selectedRobot: string | null
+  onSelectRobot: (id: string) => void
+  /** expected ms between server updates, for motion smoothing */
+  updatePeriodMs: number
+}
+
+export function Scene3D({ world, colorMode, statusText, robots, selectedRobot, onSelectRobot, updatePeriodMs }: SceneProps) {
+  const { rails, arrows, sensors, docks, parking, slots, racks } = useSceneItems(world, colorMode)
+  const posOf = useMemo(() => {
+    const m = new Map(world.nodes.map((n) => [n.id, n.pos]))
+    return (id: string) => m.get(id)
+  }, [world])
   const { center, span } = useFraming(world)
   const [layers, setLayers] = useState<Layers>({ racks: true, slots: true, sensors: true })
   const [request, setRequest] = useState<{ preset: Preset; seq: number }>({ preset: 'iso', seq: 0 })
@@ -200,10 +247,13 @@ export function Scene3D({ world, colorMode, statusText }: { world: World; colorM
         <directionalLight position={[10, 20, 10]} intensity={1.4} />
         <gridHelper args={[span * 3, Math.round(span * 3), '#2a303c', '#181c25']} position={[center[0], floorY, center[2]]} />
         <Instanced items={rails} />
+        <Instanced items={arrows} />
         <Instanced items={docks} />
+        <Instanced items={parking} opacity={0.7} />
         {layers.sensors && <Instanced items={sensors} shape="sphere" />}
         {layers.racks && <Instanced items={racks} />}
-        {layers.slots && <Instanced items={slots} opacity={0.45} />}
+        {layers.slots && <Instanced items={slots} opacity={0.28} />}
+        <Robots3D robots={robots} posOf={posOf} selected={selectedRobot} onSelect={onSelectRobot} periodMs={updatePeriodMs} />
         <TrackpadRig center={center} span={span} request={request} />
       </Canvas>
 
