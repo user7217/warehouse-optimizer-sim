@@ -1,0 +1,33 @@
+# Warehouse layout. Every number here is a knob you can change and re-run.
+#
+# Topology (top-down):
+#
+#   dock  dock  dock          <- docks, off the transfer rail
+#    |     |     |
+#   ==T=====T=====T==         <- transfer rail (floor level, across aisle mouths)
+#     |     |     |
+#   [R]A[R][R]A[R][R]A[R]     <- each aisle A has a rack face R on both sides
+#
+# Inside an aisle, robots ride horizontal rails (one per level) and switch
+# levels only at lift columns (vertical rails).
+
+name = "default"
+
+[racks]
+aisles = 10       # parallel aisles (robot lanes)
+columns = 16      # rail positions along each aisle
+levels = 5        # storage levels = horizontal rails per aisle
+depth = 1         # slots deep on each rack face (1 = one box per side)
+
+[rails]
+lift_columns = [0, 8, 15]  # columns with a vertical rail, in every aisle
+sensor_every = 4           # extra sensor every N columns on horizontal rails (0 = only ends + junctions)
+
+[docks]
+aisles = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]  # one dock in front of each listed aisle mouth
+
+[dimensions]       # metres; edge lengths are derived from these
+column_pitch = 1.0
+level_height = 1.0
+slot_depth = 0.8
+aisle_width = 0.5  # lane = robot width; racks either side, back-to-back with the next lane's racks
