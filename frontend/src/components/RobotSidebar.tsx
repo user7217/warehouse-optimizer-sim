@@ -1,6 +1,9 @@
 import { STATUS_COLOR } from '../colors'
 import type { Robot } from '../types'
 
+/** Rows rendered; the largest layouts allow thousands of robots. */
+const MAX_ROWS = 300
+
 interface Props {
   robots: Robot[]
   selected: string | null
@@ -13,10 +16,10 @@ export function RobotSidebar({ robots, selected, onSelect }: Props) {
     <aside className="panel sidebar">
       <h2>Robots <span className="count">{robots.length}</span></h2>
       {robots.length === 0 ? (
-        <p className="empty">No robots. Waiting for the simulator.</p>
+        <p className="empty">No robots yet. Open a live session or run a test.</p>
       ) : (
         <ul className="list">
-          {robots.map((r) => (
+          {robots.slice(0, MAX_ROWS).map((r) => (
             <li key={r.id} className={r.id === selected ? 'row selected' : 'row'} onClick={() => onSelect(r.id === selected ? null : r.id)}>
               <span className="dot" style={{ background: STATUS_COLOR[r.status] }} />
               <span className="mono">{r.id}</span>
@@ -26,6 +29,7 @@ export function RobotSidebar({ robots, selected, onSelect }: Props) {
           ))}
         </ul>
       )}
+      {robots.length > MAX_ROWS && <p className="more muted">+ {robots.length - MAX_ROWS} more (select robots in the views)</p>}
 
       {robot && <RobotDetail robot={robot} onSelect={onSelect} />}
     </aside>

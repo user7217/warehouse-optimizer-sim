@@ -1,33 +1,35 @@
 import type { EdgeKind, RobotStatus } from './types'
 
+// Palette from VS Code's "Dark 2026" theme: charts.* colours, accent #3994BC, errorForeground.
+// Rails are a step dimmer than robots so moving robots stay the most visible thing.
 export const EDGE_KIND_COLOR: Record<EdgeKind, string> = {
-  horizontal: '#5b9cf5',
-  vertical: '#f5a623',
-  transfer: '#9b7bf0',
-  entry: '#9b7bf0',
-  dock: '#3ecf8e',
-  parking: '#6b7a99',
+  horizontal: '#2F7EA3', // accent, dimmed
+  vertical: '#E0B97F', //   charts.yellow: lifts
+  transfer: '#AD80D7', //   charts.purple: one-way loop
+  entry: '#AD80D7',
+  dock: '#86CF86', //       charts.green
+  parking: '#5A5D5F',
 }
 
-export const SENSOR_COLOR = '#ff5c7a'
-export const DOCK_COLOR = '#3ecf8e'
-export const PARKING_COLOR = '#6b7a99'
+export const SENSOR_COLOR = '#F48771' // errorForeground
+export const DOCK_COLOR = '#86CF86'
+export const PARKING_COLOR = '#5A5D5F'
 /** A carried box on top of a robot. */
-export const PAYLOAD_COLOR = '#e0b872'
+export const PAYLOAD_COLOR = '#FFA657' // entity.name orange
 
 export const STATUS_COLOR: Record<RobotStatus, string> = {
-  idle: '#8a94a6',
-  moving: '#5b9cf5',
-  waiting: '#f5a623',
-  retrieving: '#9b7bf0',
-  delivering: '#3ecf8e',
-  failed: '#ff5c7a',
+  idle: '#8C8C8C', //       descriptionForeground
+  moving: '#57A3F8', //     charts.blue
+  waiting: '#CD861A', //    charts.orange
+  retrieving: '#AD80D7', // charts.purple
+  delivering: '#86CF86', // charts.green
+  failed: '#F48771', //     errorForeground
 }
 
 /** Distinct, stable colour per block id ("B17" -> hue). Golden-angle spacing. */
 export function blockColor(blockId: string): string {
   const n = Number(blockId.slice(1)) || 0
-  return `hsl(${(n * 137.508) % 360}, 70%, 60%)`
+  return `hsl(${(n * 137.508) % 360}, 55%, 62%)`
 }
 
 export type ColorMode = 'kind' | 'block'

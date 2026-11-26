@@ -1,0 +1,19 @@
+[project]
+name = "warehouse-sim"
+version = "0.1.0"
+description = "Warehouse robot coordination simulator. Pure standard library: runs in CPython and in the browser (Pyodide)."
+readme = "README.md"
+authors = [
+    { name = "user7217", email = "58941019+user7217@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = []  # keep it this way: the engine must run in Pyodide with no extra packages
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]

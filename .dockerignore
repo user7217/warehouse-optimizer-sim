@@ -1,0 +1,10 @@
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+frontend/dist
+frontend/public/pyodide
+.git
+.claude
+.DS_Store
+**/.DS_Store

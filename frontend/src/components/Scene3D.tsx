@@ -105,7 +105,7 @@ function useSceneItems(world: World, colorMode: ColorMode) {
     const slots: Instance[] = world.slots.map((s) => ({
       pos: s.pos,
       scale: [SLOT_FILL * pitch, SLOT_FILL * lh, SLOT_FILL * sd],
-      color: s.depth === 0 ? '#7a6a50' : '#665943',
+      color: s.depth === 0 ? '#5E564B' : '#4E483F',
     }))
 
     // Rack frame: uprights at every column boundary, front and back of each face, plus shelf edge beams.
@@ -117,12 +117,12 @@ function useSceneItems(world: World, colorMode: ColorMode) {
         const back = front + side * depth * sd
         for (let c = 0; c <= columns; c++) {
           for (const z of [front, back]) {
-            racks.push({ pos: [(c - 0.5) * pitch, height / 2 - lh / 2, z], scale: [0.04, height, 0.04], color: '#5a6478' })
+            racks.push({ pos: [(c - 0.5) * pitch, height / 2 - lh / 2, z], scale: [0.04, height, 0.04], color: '#4C4E50' })
           }
         }
         for (let lv = 0; lv < levels; lv++) {
           for (const z of [front, back]) {
-            racks.push({ pos: [((columns - 1) * pitch) / 2, lv * lh - 0.32 * lh, z], scale: [columns * pitch, 0.035, 0.035], color: '#5a6478' })
+            racks.push({ pos: [((columns - 1) * pitch) / 2, lv * lh - 0.32 * lh, z], scale: [columns * pitch, 0.035, 0.035], color: '#4C4E50' })
           }
         }
       }
@@ -223,7 +223,7 @@ interface SceneProps {
   robots: Robot[]
   selectedRobot: string | null
   onSelectRobot: (id: string) => void
-  /** expected ms between server updates, for motion smoothing */
+  /** expected ms between state updates, for motion smoothing */
   updatePeriodMs: number
 }
 
@@ -242,10 +242,10 @@ export function Scene3D({ world, colorMode, statusText, robots, selectedRobot, o
   return (
     <div className="scene-wrap">
       <Canvas dpr={[1, 2]} camera={{ position: presetPosition('iso', center, span), fov: 45 }}>
-        <color attach="background" args={['#0d1016']} />
-        <hemisphereLight args={['#ffffff', '#2a303c', 0.9]} />
+        <color attach="background" args={['#121314']} />
+        <hemisphereLight args={['#ffffff', '#2A2B2C', 0.9]} />
         <directionalLight position={[10, 20, 10]} intensity={1.4} />
-        <gridHelper args={[span * 3, Math.round(span * 3), '#2a303c', '#181c25']} position={[center[0], floorY, center[2]]} />
+        <gridHelper args={[span * 3, Math.round(span * 3), '#2A2B2C', '#1C1D1E']} position={[center[0], floorY, center[2]]} />
         <Instanced items={rails} />
         <Instanced items={arrows} />
         <Instanced items={docks} />

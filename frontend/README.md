@@ -1,32 +1,35 @@
-# React + TypeScript + Vite
+# Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + TypeScript + Vite. Everything runs in the browser: the Python engine (`../engine/src/warehouse_sim`)
+executes in Pyodide inside a Web Worker. The contract with the engine is `src/types.ts`.
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```sh
+npm install
+npm run dev       # copies Pyodide into public/pyodide, then starts Vite
+npm run build     # same copy step, then tsc + vite build (dist/ includes dist/pyodide/)
+npm run lint
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+| Path | What |
+|---|---|
+| `scripts/copy-pyodide.mjs` | self-hosts the Pyodide runtime (no CDN); writes `files.json` for download progress |
+| `src/engine/worker.ts` | boots Pyodide, loads the engine sources (bundled via `import.meta.glob`), runs live/test loops |
+| `src/engine/client.ts` | promise API over the worker, Stop (interrupt buffer), watchdog restart |
+| `src/engine/protocol.ts` | worker message types |
+| `src/useWorkbench.ts` | app state: code, scenario, session, tests, results, console |
+| `src/scenario.ts` | scenario form fields, validation, size estimates, view size limits |
+
+## Hosting
+
+The static server must send these headers so the page is cross-origin isolated (enables
+`SharedArrayBuffer`, which lets Stop interrupt runaway user code):
+
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+Without them the app still works, but a runaway loop is stopped by terminating and restarting the
+engine worker. A CSP needs at least `script-src 'self' 'wasm-unsafe-eval'` (Pyodide's Emscripten
+runtime also calls `eval` for some snippets, so `'unsafe-eval'` may be required; untested) and
+`worker-src 'self'`. CodeMirror injects `<style>` elements, so `style-src` needs `'unsafe-inline'`.

@@ -1,0 +1,47 @@
+# Home-server deployment. The app container only serves static files, so its real usage is
+# tiny (a few MB RAM, ~0% CPU idle); the limits below are a hard ceiling, not a target.
+#
+#   docker compose up -d --build
+#
+# Exposure: the port binds to 127.0.0.1 only. Reach it from the internet through a Cloudflare
+# Tunnel (cloudflared on the host pointing at http://127.0.0.1:8080, or the optional service below).
+
+services:
+  app:
+    build: .
+    image: warehouse-testbed:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    user: "101:101"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    cpus: 0.5          # ceiling: 12.5% of a 4-core i3
+    mem_limit: 128m    # ceiling; nginx serving static files uses a few MB
+    memswap_limit: 128m
+    logging:
+      driver: json-file
+      options: { max-size: "1m", max-file: "2" }
+
+  # Optional: run the tunnel in compose instead of on the host.
+  # Create a tunnel in the Cloudflare dashboard, set its public hostname's service to http://app:8080,
+  # put the token in a .env file next to this one (CLOUDFLARE_TUNNEL_TOKEN=...), then uncomment.
+  # When using this, you can remove the `ports:` section above entirely.
+  #
+  # tunnel:
+  #   image: cloudflare/cloudflared:latest
+  #   restart: unless-stopped
+  #   command: tunnel --no-autoupdate run
+  #   environment:
+  #     TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+  #   read_only: true
+  #   cap_drop: [ALL]
+  #   security_opt: [no-new-privileges:true]
+  #   cpus: 0.25
+  #   mem_limit: 128m
+  #   depends_on: [app]

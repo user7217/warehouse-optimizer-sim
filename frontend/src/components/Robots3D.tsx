@@ -8,7 +8,7 @@ import type { Robot, Vec3 } from '../types'
 
 const BODY: Vec3 = [0.6, 0.35, 0.6] // metres; fits a 1.0 m lane
 const LIFT = 0.08 // body centre above node height (rails are drawn 0.12 below nodes)
-const SNAP_DIST = 4 // metres; bigger jumps (reset, reconnect) teleport instead of gliding
+const SNAP_DIST = 4 // metres; bigger jumps (reset, fast test updates) teleport instead of gliding
 const PATH_COLOR = '#ffffff'
 
 type PosOf = (id: string) => Vec3 | undefined
@@ -18,7 +18,7 @@ interface RobotsProps {
   posOf: PosOf
   selected: string | null
   onSelect: (id: string) => void
-  /** expected time between server updates; one glide spans this long */
+  /** expected time between state updates; one glide spans this long */
   periodMs: number
 }
 
@@ -47,8 +47,8 @@ interface RobotMeshProps {
 }
 
 /**
- * Glides linearly from where it is drawn now to the latest server position over one update
- * period, so motion looks continuous between ~10 Hz snapshots (at the cost of one period of lag).
+ * Glides linearly from where it is drawn now to the latest engine position over one update
+ * period, so motion looks continuous between snapshots (at the cost of one period of lag).
  */
 function RobotMesh({ robot, x, y, z, selected, onSelect, periodMs }: RobotMeshProps) {
   const group = useRef<THREE.Group>(null)

@@ -20,11 +20,11 @@ const MAX_K = 20
 const clampK = (k: number) => Math.min(MAX_K, Math.max(MIN_K, k))
 
 /**
- * Pan/zoom for an SVG, tuned for trackpads:
+ * Pan/zoom for SVG content inside `ref`'s element, tuned for trackpads:
  * pinch = zoom at cursor, two-finger scroll = pan, drag = pan, double-click = fit.
  * The viewBox always matches the element's aspect ratio, so 1 screen px = 1/k world units exactly.
  */
-export function usePanZoom(ref: RefObject<SVGSVGElement | null>, content: Bounds) {
+export function usePanZoom(ref: RefObject<HTMLElement | null>, content: Bounds) {
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 })
   const userMoved = useRef(false) // true once the user pans/zooms; stops auto-fit
@@ -69,7 +69,7 @@ export function usePanZoom(ref: RefObject<SVGSVGElement | null>, content: Bounds
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    return attachGestures(el as unknown as HTMLElement, {
+    return attachGestures(el, {
       onZoom: zoomAt,
       onScroll: (dx, dy) => {
         userMoved.current = true

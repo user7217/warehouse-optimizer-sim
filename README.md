@@ -1,58 +1,87 @@
-# Warehouse robot coordination sim
+# Warehouse robot coordination testbed
 
-A lab for multi-robot optimisation algorithms on a rail-based automated warehouse.
+Write a routing or task-assignment algorithm in Python, in the browser, and benchmark it on a
+simulated rail-based warehouse. No ROS, no setup: the editor, the simulator and your code all run
+in the visitor's browser (Python compiled to WebAssembly via Pyodide). The server only serves files.
 
-## Layout
+## How it fits together
 
 ```
-backend/   Python. All logic. You edit this.
-  configs/default.toml             layout, robot and sim knobs
-  src/warehouse_sim/world/         config -> graph (nodes, rails, sensors, blocks, slots, parking)
-  src/warehouse_sim/sim/engine.py  tick loop, task lifecycle, ownership invariants
-  src/warehouse_sim/sim/signalling.py  block signalling: the fixed safety layer
-  src/warehouse_sim/algorithms/    THE SWAPPABLE PART
-    routing.py      Router      baseline: Dijkstra, each robot alone
-    assignment.py   Assigner    baseline: greedy nearest robot, oldest task first
-    deadlock.py     detection (wait-for cycles) + push-chain back-off recovery
-  src/warehouse_sim/api/           FastAPI + WebSocket, no logic
-frontend/  React + Three.js. Only renders what the backend says. Contract: frontend/src/types.ts
+browser
+├── UI (React, Three.js, CodeMirror)          frontend/src
+└── Web Worker
+    └── Pyodide (CPython in WebAssembly)
+        ├── warehouse_sim  (the engine)       engine/src/warehouse_sim   ← bundled at build time
+        └── your code      (Router / Assigner, typed in the editor)
+server: nginx, static files only                deploy/, Dockerfile, compose.yaml
 ```
 
-## Baseline results (the numbers to beat)
+Why in the browser: the site is public. Running strangers' Python on a home server is remote code
+execution. Here it runs in their own browser's WebAssembly sandbox, the server never sees it, and
+server load stays near zero whatever people run.
 
-8 robots / 40 random tasks and 10 robots / 80 tasks, seeds 1-20: every task delivered on all 40 runs
-(~2100-2400 and ~3400-3800 ticks), at most 8-16 deadlocks per run, all recovered.
-Safety (no collisions, no double ownership) holds on every seed, with and without random stalls.
+## The engine (`engine/src/warehouse_sim/`)
 
-What made it live: everything outside the aisles is one-way (two-lane transfer loop, separate aisle
-in/out, docks as sidings), and back-offs prefer stepping off the other robots' routes (e.g. up a lift).
-Head-on conflicts now only happen inside the two-way aisles.
+Pure standard library (no pip packages), so it runs unchanged in CPython (tests) and Pyodide.
 
-**Rule:** the frontend never decides anything. Swap an algorithm in Python; the views update.
+| Path | What |
+|---|---|
+| `runner.py` | entry points the browser calls; contract in `frontend/src/types.ts` |
+| `scenario.py` | test scenarios (layout size, robots, workload, arrivals) + presets |
+| `templates/default_algorithms.py` | what the editor starts with: the baseline, written out |
+| `algorithms/adapters.py` | times, validates and contains every algorithm call |
+| `algorithms/routing.py`, `assignment.py` | built-in baselines (Dijkstra, greedy) |
+| `algorithms/deadlock.py` | wait-for cycle detection + push-chain back-off |
+| `sim/engine.py` | tick loop, orders, task lifecycle, ownership invariants, metrics |
+| `sim/signalling.py` | block signalling: the fixed safety layer |
+| `world/` | config → graph: rails, lifts, one-way transfer loop, dock sidings, parking |
 
-## Run
+### Writing an algorithm
+
+Define `class Router` and/or `class Assigner` (anything missing uses the baseline):
+
+```python
+class Router:
+    def __init__(self, world, view): ...
+    def route(self, start, goal):      # -> [node, ..., goal] | [] | None ("ask again next tick")
+    def distance(self, start, goal):   # optional -> metres
+
+class Assigner:
+    def __init__(self, world, view, router): ...
+    def assign(self, tasks, robots, origin):   # -> [(task_id, robot_id), ...]
+```
+
+Every answer is checked (legal moves only, ends at goal, queued tasks, free robots, no doubles);
+a bad answer stops the test with an error at your line. Robots only move when block signalling
+allows it, so algorithms can cause waiting and deadlocks, never collisions.
+
+### What a test records
+
+Makespan (ticks), throughput, item delivery time (avg / p95 / max), queue time, order completion
+time, robot utilization, fraction of time waiting, distance, deadlocks, back-offs, and wall-clock
+time per call for `route`, `assign` and the whole tick (calls, mean, p95, max, total).
+Timings are measured in the browser: compare algorithms on the same machine, not across machines.
+
+## Develop
 
 ```bash
-cd backend && uv run uvicorn warehouse_sim.api.server:app --reload --port 8000
+cd frontend && npm install && npm run dev
 ```
 
 ```bash
-cd frontend && npm run dev
+cd engine && uv run pytest -q
 ```
 
-Open http://localhost:5173.
-
-Other layout: `WAREHOUSE_CONFIG=configs/mine.toml uv run uvicorn ...`
-
-## Test
+## Deploy (home server, Cloudflare Tunnel)
 
 ```bash
-cd backend && uv run pytest -q
+docker compose up -d --build
 ```
 
-## Model in one paragraph
-
-Robots ride rails. Each aisle has one horizontal rail per storage level; lifts (vertical rails) sit at
-configured columns; a floor transfer rail joins aisle mouths to docks. Sensors sit at rail ends,
-lift junctions and every N columns. The rail between two sensors is a **block**: at most one robot
-inside at a time, and a robot only counts as moved when a sensor confirms it (railway block signalling).
+- Serves on `127.0.0.1:8080` only; point a Cloudflare Tunnel at it (or use the commented
+  `tunnel` service in `compose.yaml`).
+- Runs as uid 101, read-only root filesystem, all capabilities dropped, `no-new-privileges`,
+  capped at 0.5 CPU and 128 MB (it actually uses a few MB).
+- Sends COOP/COEP + a strict CSP. In Cloudflare, turn off Rocket Loader, Email Obfuscation and
+  any script injection (they break the CSP/isolation). Cloudflare caching and compression are fine.
+- Nothing is stored anywhere: no database, no uploads, no logs of user code.
