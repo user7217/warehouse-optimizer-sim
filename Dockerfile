@@ -5,7 +5,7 @@
 #   docker compose up -d          (see compose.yaml for CPU/RAM limits and hardening)
 
 # ---- build ------------------------------------------------------------------
-FROM nginxinc/nginx-unprivileged:stable-alpine
+FROM node:22-alpine AS build
 WORKDIR /src
 # The frontend bundles ../engine/src/warehouse_sim/**/*.py at build time.
 COPY engine/src ./engine/src
@@ -15,7 +15,7 @@ COPY frontend ./frontend
 RUN cd frontend && npm run build
 
 # ---- serve ------------------------------------------------------------------
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:stable-alpine
 COPY deploy/nginx.conf /etc/nginx/nginx.conf
 COPY deploy/security-headers.conf /etc/nginx/security-headers.conf
 COPY --from=build /src/frontend/dist /usr/share/nginx/html
