@@ -5,10 +5,13 @@
 #   docker compose up -d          (see compose.yaml for CPU/RAM limits and hardening)
 
 # ---- build ------------------------------------------------------------------
+# ---- build ------------------------------------------------------------------
 FROM node:22-alpine AS build
 WORKDIR /src
 # The frontend bundles ../engine/src/warehouse_sim/**/*.py at build time.
 COPY engine/src ./engine/src
+# vite.config.ts reads the production headers from ../deploy/.
+COPY deploy/security-headers.conf ./deploy/security-headers.conf
 COPY frontend/package.json frontend/package-lock.json ./frontend/
 RUN cd frontend && npm ci --no-audit --no-fund
 COPY frontend ./frontend
